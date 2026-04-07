@@ -36,7 +36,6 @@ When something breaks, just enter the incident hash — **3 seconds later, you k
 | **One-Click Blame Analysis** | Input incident ID, instantly locate the broken link in your responsibility chain |
 | **Causality Tree Visualization** | Git-like tree showing your Agent decision chain |
 | **Cryptographic Signatures** | Every decision gets an Ed25519 signature. No denial possible. |
-| **Blockchain Anchoring (Optional)** | Anchor decision hashes to Bitcoin — legally admissible evidence |
 
 ---
 
@@ -94,7 +93,7 @@ blame-finder dashboard
 
 Open your browser and see:
 
-- **Causality Topology** — Who called whom,一目了然
+- **Causality Topology** — Who called whom, at a glance
 - **Failed Nodes Highlighted in Red** — Problem agents stand out
 - **Blame Share Pie Chart** — PM Agent takes 60% blame, Coder Agent 35%, Others 5%
 
@@ -119,7 +118,6 @@ Open your browser and see:
 - [ ] LangChain official adapter
 - [ ] CrewAI official adapter
 - [ ] One-click PDF/HTML report export
-- [ ] Bitcoin anchoring integration
 
 ---
 
