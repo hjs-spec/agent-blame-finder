@@ -136,4 +136,3 @@ PRs welcome! Whether it's fixing bugs, improving docs, or adding features.
 ## 📜 License
 
 MIT © Agent Blame-Finder
-```
