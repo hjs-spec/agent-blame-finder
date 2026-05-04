@@ -1,256 +1,120 @@
-"""
-Unit tests for Agent Blame-Finder core functionality.
-"""
+"""Tests for Agent Blackbox."""
 
 import pytest
-import time
-import json
-import tempfile
-import os
-from cryptography.hazmat.primitives.asymmetric import ed25519
 
-from blame_finder.core import (
-    BlameFinder,
-    JEPReceipt,
-    Verb,
-    Verdict
-)
+from agent_blackbox import AgentBlackbox, JEPEvent, Verb
+from agent_blackbox.jep import JAC_CHAIN_EXT, HJS_EVIDENCE_EXT
 
 
-class TestJEPReceipt:
-    """Tests for JEPReceipt class."""
-
-    def test_create_receipt(self):
-        """Test creating a JEP receipt."""
-        receipt = JEPReceipt(
-            verb=Verb.JUDGE,
-            who="test-agent",
-            when=int(time.time()),
-            what="test-decision"
-        )
-        assert receipt.verb == Verb.JUDGE
-        assert receipt.who == "test-agent"
-        assert receipt.what == "test-decision"
-
-    def test_calculate_hash(self):
-        """Test hash calculation is deterministic."""
-        receipt1 = JEPReceipt(
-            verb=Verb.JUDGE,
-            who="agent",
-            when=1234567890,
-            what="decision"
-        )
-        receipt2 = JEPReceipt(
-            verb=Verb.JUDGE,
-            who="agent",
-            when=1234567890,
-            what="decision"
-        )
-        assert receipt1.calculate_hash() == receipt2.calculate_hash()
-
-    def test_sign_and_verify(self):
-        """Test signing and verification of receipts."""
-        private_key = ed25519.Ed25519PrivateKey.generate()
-        public_key = private_key.public_key()
-
-        receipt = JEPReceipt(
-            verb=Verb.JUDGE,
-            who="test-agent",
-            when=int(time.time()),
-            what="test-decision"
-        )
-        receipt.sign(private_key)
-        assert receipt.signature is not None
-        assert receipt.verify(public_key) is True
-
-    def test_verify_fails_with_wrong_key(self):
-        """Test verification fails with wrong public key."""
-        private_key1 = ed25519.Ed25519PrivateKey.generate()
-        private_key2 = ed25519.Ed25519PrivateKey.generate()
-        public_key2 = private_key2.public_key()
-
-        receipt = JEPReceipt(
-            verb=Verb.JUDGE,
-            who="test-agent",
-            when=int(time.time()),
-            what="test-decision"
-        )
-        receipt.sign(private_key1)
-        assert receipt.verify(public_key2) is False
-
-    def test_to_dict_and_from_dict(self):
-        """Test serialization and deserialization."""
-        original = JEPReceipt(
-            verb=Verb.DELEGATE,
-            who="agent-a",
-            when=1234567890,
-            what="delegate-task",
-            ref="parent-hash",
-            task_based_on="parent-task"
-        )
-        data = original.to_dict()
-        reconstructed = JEPReceipt.from_dict(data)
-        
-        assert reconstructed.verb == original.verb
-        assert reconstructed.who == original.who
-        assert reconstructed.when == original.when
-        assert reconstructed.what == original.what
-        assert reconstructed.ref == original.ref
-        assert reconstructed.task_based_on == original.task_based_on
+def test_jep_event_sign_and_verify():
+    finder = AgentBlackbox()
+    event = JEPEvent(
+        verb=Verb.JUDGMENT,
+        who="test-agent",
+        when=1234567890,
+        what={"claim": "decision"},
+        nonce="nonce-1",
+    )
+    key = finder._get_agent_private_key("test-agent")
+    event.sign(key)
+    assert event.verify(key.public_key()) is True
+    assert event.event_hash().startswith("sha256:")
 
 
-class TestBlameFinder:
-    """Tests for BlameFinder class."""
+def test_trace_decorator_success(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
 
-    @pytest.fixture
-    def temp_storage(self):
-        """Create temporary storage directory for tests."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield tmpdir
+    @box.trace(agent_name="test-agent")
+    def add(a, b):
+        return a + b
 
-    @pytest.fixture
-    def finder(self, temp_storage):
-        """Create BlameFinder instance with temp storage."""
-        return BlameFinder(storage=temp_storage)
-
-    def test_trace_decorator_success(self, finder):
-        """Test trace decorator with successful execution."""
-        @finder.trace(agent_name="test-agent")
-        def add(a, b):
-            return a + b
-
-        result = add(2, 3)
-        assert result == 5
-
-        # Check that receipt was saved
-        assert len(finder.receipts) == 1
-        receipt_hash = list(finder.receipts.keys())[0]
-        receipt = finder.receipts[receipt_hash]
-        assert receipt.verb == Verb.JUDGE
-        assert receipt.who == "test-agent"
-
-    def test_trace_decorator_failure(self, finder):
-        """Test trace decorator with failed execution."""
-        @finder.trace(agent_name="test-agent")
-        def fail():
-            raise ValueError("Something went wrong")
-
-        with pytest.raises(ValueError):
-            fail()
-
-        # Check that failure was recorded
-        assert len(finder.receipts) == 1
-        receipt_hash = list(finder.receipts.keys())[0]
-        trace = finder.traces.get(receipt_hash)
-        assert trace is not None
-        assert trace.status == "failed"
-
-    def test_trace_with_parent_task(self, finder):
-        """Test trace decorator with parent task reference (JAC)."""
-        parent_hash = "parent-task-hash-123"
-
-        @finder.trace(agent_name="child-agent", parent_task_hash=parent_hash)
-        def child_task():
-            return "child result"
-
-        child_task()
-        
-        # Check that task_based_on was set
-        receipt_hash = list(finder.receipts.keys())[0]
-        receipt = finder.receipts[receipt_hash]
-        assert receipt.task_based_on == parent_hash
-
-    def test_blame_analysis_chain_intact(self, finder):
-        """Test blame analysis when chain is intact."""
-        # Create a chain of receipts
-        @finder.trace(agent_name="agent-1")
-        def step1():
-            return "step1 result"
-
-        @finder.trace(agent_name="agent-2", parent_task_hash=None)
-        def step2():
-            return "step2 result"
-
-        step1()
-        step2()
-
-        # Get the second receipt's hash
-        receipt_hashes = list(finder.receipts.keys())
-        result = finder.blame(receipt_hashes[0])
-        
-        assert "incident" in result
-        assert "verdict" in result
-
-    def test_blame_not_found(self, finder):
-        """Test blame analysis with non-existent incident."""
-        result = finder.blame("non-existent-hash")
-        assert result["verdict"] == "not_found"
-
-    def test_get_causality_tree(self, finder):
-        """Test building causality tree."""
-        @finder.trace(agent_name="root")
-        def root_task():
-            return "root"
-
-        @finder.trace(agent_name="child", parent_task_hash=None)
-        def child_task():
-            return "child"
-
-        root_task()
-        child_task()
-
-        # Get root receipt hash
-        root_hash = None
-        for h, trace in finder.traces.items():
-            if trace.agent_name == "root":
-                root_hash = h
-                break
-
-        if root_hash:
-            tree = finder.get_causality_tree(root_hash)
-            assert "hash" in tree
-            assert "agent" in tree or "missing" in tree
+    assert add(2, 3) == 5
+    assert len(box.events) == 1
+    event_hash = list(box.events.keys())[0]
+    event = box.events[event_hash]
+    assert event.ext[JAC_CHAIN_EXT]["based_on_type"] == "chain-root"
+    assert HJS_EVIDENCE_EXT in event.ext
+    assert box.verify_event(event_hash) is True
 
 
-class TestChainOfResponsibility:
-    """Tests for HJS responsibility chain."""
+def test_trace_decorator_failure(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
 
-    def test_ref_field_linking(self, finder):
-        """Test that ref field correctly links responsibility."""
-        @finder.trace(agent_name="delegator")
-        def delegator():
-            return "delegated"
+    @box.trace(agent_name="test-agent")
+    def fail():
+        raise ValueError("Something went wrong")
 
-        @finder.trace(agent_name="executor")
-        def executor():
-            return "executed"
+    with pytest.raises(ValueError):
+        fail()
 
-        delegator()
-        executor()
-
-        # Verify that receipts exist and have proper refs
-        for receipt in finder.receipts.values():
-            assert receipt.verb in [Verb.JUDGE, Verb.DELEGATE, Verb.TERMINATE, Verb.VERIFY]
+    event_hash = list(box.events.keys())[0]
+    trace = box.traces[event_hash]
+    assert trace.status == "failed"
+    assert trace.error_digest is not None
 
 
-class TestJACCausality:
-    """Tests for JAC causality chain."""
+def test_parent_task_hash_maps_to_jac_ext(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
+    parent = "sha256:" + "a" * 64
 
-    def test_task_based_on_linking(self, finder):
-        """Test that task_based_on field correctly links causality."""
-        parent_hash = "causality-parent-456"
+    @box.trace(agent_name="child-agent", parent_task_hash=parent)
+    def child():
+        return "ok"
 
-        @finder.trace(agent_name="dependent-agent", parent_task_hash=parent_hash)
-        def dependent_task():
-            return "dependent result"
-
-        dependent_task()
-
-        # Verify task_based_on was set
-        receipt_hash = list(finder.receipts.keys())[0]
-        receipt = finder.receipts[receipt_hash]
-        assert receipt.task_based_on == parent_hash
+    child()
+    event_hash = list(box.events.keys())[0]
+    event = box.events[event_hash]
+    assert event.ref == parent
+    assert event.ext[JAC_CHAIN_EXT]["based_on"] == parent
+    assert "task_based_on" not in event.to_dict()
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_review_incident_failed_node(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
+
+    @box.trace(agent_name="bad-agent")
+    def fail():
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        fail()
+
+    event_hash = list(box.events.keys())[0]
+    report = box.review_incident(event_hash)
+    assert report["candidate_failure_node"] == "bad-agent"
+    assert report["boundary"]["not_legal_liability"] is True
+
+
+def test_blame_alias_kept_but_boundary_present(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
+
+    @box.trace(agent_name="agent")
+    def ok():
+        return "ok"
+
+    ok()
+    event_hash = list(box.events.keys())[0]
+    result = box.blame(event_hash)
+    assert "verdict" in result
+    assert result["boundary"]["not_factual_causality_proof"] is True
+
+
+def test_causality_tree(tmp_path):
+    box = AgentBlackbox(storage=str(tmp_path))
+
+    @box.trace(agent_name="root")
+    def root():
+        return "root"
+
+    root()
+    root_hash = list(box.events.keys())[0]
+
+    @box.trace(agent_name="child", parent_event_hash=root_hash)
+    def child():
+        return "child"
+
+    child()
+
+    tree = box.get_causality_tree(root_hash)
+    assert tree["agent"] == "root"
+    assert len(tree["children"]) == 1

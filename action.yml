@@ -1,40 +1,45 @@
-name: 'Agent-Blackbox Blame Finder'
-description: 'Find which agent messed up in 3 seconds — JEP/JAC cryptographic blackbox'
-author: 'HJS Foundation'
+name: "Agent Blackbox Incident Review"
+description: "Review Agent Blackbox JEP/HJS/JAC trace artifacts"
+author: "HJS Spec"
 
 branding:
-  icon: 'search'
-  color: 'black'
+  icon: "search"
+  color: "black"
 
 inputs:
-  incident_id:
-    description: 'Incident ID to blame'
+  event_hash:
+    description: "Event hash to review"
     required: true
   storage_path:
-    description: 'Path to blackbox logs'
+    description: "Path to blackbox logs"
     required: false
-    default: './blackbox_logs'
+    default: "./blackbox_logs"
 
 outputs:
-  blame_result:
-    description: 'Blame analysis result (JSON)'
-  responsible_agent:
-    description: 'The agent responsible for the failure'
+  review_result:
+    description: "Incident review result JSON"
+  candidate_failure_node:
+    description: "Candidate failure node for human review"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
-    - name: Install Agent-Blackbox
+        python-version: "3.11"
+    - name: Install Agent Blackbox
       run: pip install agent-blackbox
       shell: bash
-    - name: Run blame analysis
-      id: blame
+    - name: Run incident review
+      id: review
       run: |
-        result=$(blame-finder blame ${{ inputs.incident_id }} --json)
-        echo "blame_result=$result" >> $GITHUB_OUTPUT
-        echo "responsible_agent=$(echo $result | jq -r '.responsible')" >> $GITHUB_OUTPUT
+        agent-blackbox --storage "${{ inputs.storage_path }}" review "${{ inputs.event_hash }}" > /tmp/agent-blackbox-review.json
+        node=$(python -c 'import json; print(json.load(open("/tmp/agent-blackbox-review.json")).get("candidate_failure_node", ""))')
+        {
+          echo "review_result<<EOF"
+          cat /tmp/agent-blackbox-review.json
+          echo "EOF"
+          echo "candidate_failure_node=$node"
+        } >> "$GITHUB_OUTPUT"
       shell: bash

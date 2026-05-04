@@ -1,34 +1,11 @@
-# Python
 __pycache__/
-*.py[cod]
-*.so
-.Python
-venv/
-env/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
+*.pyc
 .pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.mypy_cache/
-.ruff_cache/
-
-# Rust
-target/
-Cargo.lock
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+.venv/
+.env
 .DS_Store
-Thumbs.db
-
-# Project specific
-*.log
+examples_logs/
 blackbox_logs/
+*.egg-info/
+build/
+dist/

@@ -3,31 +3,29 @@
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
-| 0.1.x   | ✅ |
+|---|---|
+| 0.2.x alpha | ✅ |
+| 0.1.x | Historical |
 
 ## Reporting a Vulnerability
 
-**Please DO NOT report security vulnerabilities through public GitHub issues.**
+Please do not report security vulnerabilities through public GitHub issues.
 
-Instead, send an email to **signal@humanjudgment.org**.
+Email: signal@humanjudgment.org
 
-You should receive a response within 48 hours.
+## Scope
 
-## What to Include
+Relevant issues include:
 
-- Type of issue (e.g., signature bypass, data leak)
-- Steps to reproduce
-- Impact assessment
-- Any potential fix (if you have one)
+- event signature bypass;
+- event hash tampering;
+- unsafe log handling;
+- accidental data leakage;
+- insecure evidence reference handling;
+- dependency chain manipulation.
 
-## Disclosure Policy
+## Boundary
 
-We follow a 90-day disclosure timeline:
-1. Report received → confirmation within 48 hours
-2. Fix developed → internally within 30 days
-3. Patch released → within 90 days of report
+Agent Blackbox records local runtime trace artifacts.
 
----
-
-Thanks for helping keep Agent Blame-Finder secure! 🔒
+It does not provide authorization, sandboxing, legal compliance, or complete-log guarantees.
